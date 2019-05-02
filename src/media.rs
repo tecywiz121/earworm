@@ -18,7 +18,7 @@ enum TagError {
     NoTitle,
 }
 
-#[derive(Debug, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Image {
     mime_type: String,
     data: Vec<u8>,
@@ -34,7 +34,7 @@ impl Image {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Track {
     path: PathBuf,
 

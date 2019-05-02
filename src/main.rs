@@ -4,6 +4,9 @@ pub extern crate slog;
 mod game;
 mod media;
 
+use crate::game::Game;
+use crate::media::Track;
+
 use glib::functions::set_application_name;
 use glib::variant::FromVariant;
 
@@ -12,14 +15,20 @@ use gio::prelude::*;
 use gtk::prelude::*;
 use gtk::{AboutDialog, ToVariant};
 
+use slog::{Drain, Logger};
+
 use std::env::args;
 use std::path::Path;
+use std::sync::{Arc, Mutex};
 
 #[derive(Debug, Clone)]
 struct QuizButton {
     button: gtk::Button,
     image: gtk::Image,
-    label: gtk::Label,
+
+    artist: gtk::Label,
+    album: gtk::Label,
+    title: gtk::Label,
 }
 
 impl QuizButton {
@@ -32,14 +41,47 @@ impl QuizButton {
         let image = gtk::Image::new();
         v_box.pack_start(&image, true, true, 0);
 
-        let label = gtk::Label::new("");
-        v_box.pack_start(&label, false, false, 0);
+        let artist = gtk::Label::new("");
+        v_box.pack_start(&artist, false, false, 0);
+
+        let album = gtk::Label::new("");
+        v_box.pack_start(&album, false, false, 0);
+
+        let title = gtk::Label::new("");
+        v_box.pack_start(&title, false, false, 0);
+
 
         Self {
             button,
             image,
-            label,
+            artist,
+            album,
+            title,
         }
+    }
+
+    pub fn set_album(&self, txt: &str) {
+        self.album.set_text(txt);
+    }
+
+    pub fn set_artist(&self, txt: &str) {
+        self.artist.set_text(txt);
+    }
+
+    pub fn set_title(&self, txt: &str) {
+        self.title.set_text(txt);
+    }
+
+    pub fn set_from_track(&self, track: &Track) {
+        if let Some(album) = track.album() {
+            self.set_album(album);
+        }
+
+        if let Some(artist) = track.artist() {
+           self.set_artist(artist);
+        }
+
+        self.set_title(track.title());
     }
 }
 
@@ -53,10 +95,12 @@ struct Earworm {
     first: QuizButton,
     second: QuizButton,
     third: QuizButton,
+
+    game: Arc<Mutex<Game>>,
 }
 
 impl Earworm {
-    pub fn new(application: gtk::Application) -> Self {
+    pub fn new(application: gtk::Application, logger: Logger) -> Self {
         let window = gtk::ApplicationWindow::new(&application);
 
         window.set_title("Earworm");
@@ -71,6 +115,12 @@ impl Earworm {
         tool_open.set_action_name("app.open");
 
         toolbar.insert(&tool_open, 0);
+
+        let image_play = gtk::Image::new_from_icon_name("media-playback-start", gtk::IconSize::SmallToolbar);
+        let tool_play = gtk::ToolButton::new(&image_play, "Start Game");
+        tool_play.set_action_name("app.play");
+
+        toolbar.insert(&tool_play, 1);
 
         let v_box = gtk::Box::new(gtk::Orientation::Vertical, 10);
 
@@ -108,6 +158,8 @@ impl Earworm {
             first,
             second,
             third,
+
+            game: Arc::new(Mutex::new(Game::new(logger))),
         };
 
         result.add_actions();
@@ -142,6 +194,7 @@ impl Earworm {
 
         let start_p = glib::VariantTy::new("s").unwrap();
         let start = gio::SimpleAction::new("start", start_p);
+        let game = self.game.clone();
         start.connect_activate(move |_, p| {
             let p = p.as_ref().expect("app.start activated without parameter");
 
@@ -149,7 +202,7 @@ impl Earworm {
             let p_string = String::from_variant(p).expect("app.start activated with non-string");
             let path = Path::new(&p_string);
 
-            println!("{}", path.to_string_lossy());
+            game.lock().unwrap().search_dir(path);
         });
 
         self.application.add_action(&start);
@@ -181,7 +234,29 @@ impl Earworm {
         });
 
         self.application.add_action(&open);
+
+        let play = gio::SimpleAction::new("play", None);
+        let ear = self.clone();
+        play.connect_activate(move |_, _| {
+            let game = ear.game.lock().unwrap();
+
+            let round = game.start_round(3);
+
+            let tracks = round.tracks();
+            ear.first.set_from_track(&tracks[0]);
+            ear.second.set_from_track(&tracks[1]);
+            ear.third.set_from_track(&tracks[2]);
+        });
+
+        self.application.add_action(&play);
     }
+}
+
+fn new_root_logger() -> slog::Logger {
+    let decorator = slog_term::PlainSyncDecorator::new(std::io::stdout());
+    let drain = slog_term::FullFormat::new(decorator).build().fuse();
+
+    slog::Logger::root(drain, o!())
 }
 
 fn main() {
@@ -191,7 +266,8 @@ fn main() {
         .expect("Initialization failed...");
 
     application.connect_activate(|app| {
-        let ew = Earworm::new(app.clone());
+        let logger = new_root_logger();
+        let ew = Earworm::new(app.clone(), logger);
         ew.show_all();
     });
 

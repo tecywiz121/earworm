@@ -10,6 +10,8 @@ glib = "0.7.1"
 walkdir = "2"
 id3 = "0.3.0"
 slog = "2.4"
+slog-term = "2"
+rand = "0.6.5"
 
 [dependencies.snafu]
 version = "0.2.3"
