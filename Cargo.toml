@@ -1,0 +1,20 @@
+[package]
+name = "earworm"
+version = "0.1.0"
+authors = ["Sam Wilson <tecywiz121@hotmail.com>"]
+edition = "2018"
+
+[dependencies]
+gio = "0.6.0"
+glib = "0.7.1"
+walkdir = "2"
+id3 = "0.3.0"
+slog = "2.4"
+
+[dependencies.snafu]
+version = "0.2.3"
+features = ["rust_1_30"]
+
+[dependencies.gtk]
+version = "0.6.0"
+features = ["v3_16"]
