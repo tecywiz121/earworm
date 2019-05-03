@@ -4,8 +4,10 @@ pub extern crate slog;
 mod game;
 mod media;
 
-use crate::game::Game;
+use crate::game::{Round, Game};
 use crate::media::Track;
+
+use derivative::Derivative;
 
 use glib::functions::set_application_name;
 use glib::variant::FromVariant;
@@ -15,11 +17,16 @@ use gio::prelude::*;
 use gtk::prelude::*;
 use gtk::{AboutDialog, ToVariant};
 
+use rodio::{Source, Sink};
+
 use slog::{Drain, Logger};
 
 use std::env::args;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
+use std::fs::File;
+use std::io::BufReader;
 
 #[derive(Debug, Clone)]
 struct QuizButton {
@@ -85,7 +92,8 @@ impl QuizButton {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Derivative, Clone)]
+#[derivative(Debug)]
 struct Earworm {
     application: gtk::Application,
     window: gtk::ApplicationWindow,
@@ -96,6 +104,10 @@ struct Earworm {
     second: QuizButton,
     third: QuizButton,
 
+    #[derivative(Debug="ignore")]
+    sink: Arc<Mutex<Sink>>,
+
+    round: Arc<Mutex<Option<Round>>>,
     game: Arc<Mutex<Game>>,
 }
 
@@ -125,6 +137,7 @@ impl Earworm {
         let v_box = gtk::Box::new(gtk::Orientation::Vertical, 10);
 
         let remaining = gtk::ProgressBar::new();
+        remaining.set_inverted(true);
 
         v_box.pack_start(&toolbar, false, false, 0);
         v_box.pack_start(&remaining, false, false, 0);
@@ -150,6 +163,9 @@ impl Earworm {
 
         Self::build_system_menu(&application);
 
+        let device = rodio::default_output_device().unwrap();
+        let sink = Arc::new(Mutex::new(Sink::new(&device)));
+
         let result = Earworm {
             window,
             application,
@@ -159,6 +175,8 @@ impl Earworm {
             second,
             third,
 
+            sink,
+            round: Arc::default(),
             game: Arc::new(Mutex::new(Game::new(logger))),
         };
 
@@ -242,10 +260,53 @@ impl Earworm {
 
             let round = game.start_round(3);
 
+            let full_duration = round.ends() - Instant::now();
+            let tick_duration = (full_duration) / 500;
+
             let tracks = round.tracks();
             ear.first.set_from_track(&tracks[0]);
             ear.second.set_from_track(&tracks[1]);
             ear.third.set_from_track(&tracks[2]);
+
+            let file = File::open(round.correct().path()).unwrap();
+            let source = rodio::Decoder::new(BufReader::new(file)).unwrap();
+            let source = source.take_duration(full_duration);
+
+            let device = rodio::default_output_device().unwrap();
+            let mut sink = ear.sink.lock().unwrap();
+            sink.stop();
+            *sink = Sink::new(&device);
+            sink.append(source);
+
+            if ear.round.lock().unwrap().replace(round).is_none() {
+                let ear_clone = ear.clone();
+                gtk::timeout_add(tick_duration.as_millis() as u32, move || {
+                    let mut guard = ear_clone.round.lock().unwrap();
+
+                    let round = match &mut *guard {
+                        Some(r) => r,
+                        None => return gtk::Continue(false),
+                    };
+
+                    let now = Instant::now();
+
+                    if now >= round.ends() {
+                        std::mem::drop(round);
+
+                        *guard = None;
+                        return gtk::Continue(false);
+                    }
+
+                    let so_far = (round.ends() - now).as_millis() as f64;
+                    let full = full_duration.as_millis() as f64;
+
+                    let percent = so_far / full;
+
+                    ear_clone.remaining.set_fraction(percent);
+
+                    gtk::Continue(true)
+                });
+            }
         });
 
         self.application.add_action(&play);
