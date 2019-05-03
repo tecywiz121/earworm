@@ -10,7 +10,7 @@ use snafu::Snafu;
 use std::collections::HashSet;
 use std::ffi::OsStr;
 use std::path::Path;
-use std::time::{Instant, Duration};
+use std::time::{Duration, Instant};
 
 use walkdir::{DirEntry, WalkDir};
 

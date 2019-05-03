@@ -4,7 +4,7 @@ pub extern crate slog;
 mod game;
 mod media;
 
-use crate::game::{Round, Game};
+use crate::game::{Game, Round};
 use crate::media::Track;
 
 use derivative::Derivative;
@@ -17,16 +17,16 @@ use gio::prelude::*;
 use gtk::prelude::*;
 use gtk::{AboutDialog, ToVariant};
 
-use rodio::{Source, Sink};
+use rodio::{Sink, Source};
 
 use slog::{Drain, Logger};
 
 use std::env::args;
+use std::fs::File;
+use std::io::BufReader;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use std::fs::File;
-use std::io::BufReader;
 
 #[derive(Debug, Clone)]
 struct QuizButton {
@@ -57,7 +57,6 @@ impl QuizButton {
         let title = gtk::Label::new("");
         v_box.pack_start(&title, false, false, 0);
 
-
         Self {
             button,
             image,
@@ -85,7 +84,7 @@ impl QuizButton {
         }
 
         if let Some(artist) = track.artist() {
-           self.set_artist(artist);
+            self.set_artist(artist);
         }
 
         self.set_title(track.title());
@@ -104,7 +103,7 @@ struct Earworm {
     second: QuizButton,
     third: QuizButton,
 
-    #[derivative(Debug="ignore")]
+    #[derivative(Debug = "ignore")]
     sink: Arc<Mutex<Sink>>,
 
     round: Arc<Mutex<Option<Round>>>,
@@ -128,7 +127,8 @@ impl Earworm {
 
         toolbar.insert(&tool_open, 0);
 
-        let image_play = gtk::Image::new_from_icon_name("media-playback-start", gtk::IconSize::SmallToolbar);
+        let image_play =
+            gtk::Image::new_from_icon_name("media-playback-start", gtk::IconSize::SmallToolbar);
         let tool_play = gtk::ToolButton::new(&image_play, "Start Game");
         tool_play.set_action_name("app.play");
 
